@@ -138,21 +138,21 @@ export class TsickleCompilerHost implements ts.CompilerHost {
       onError?: (message: string) => void): ts.SourceFile {
     if (this.runConfiguration === undefined || this.runConfiguration.pass === Pass.NONE) {
       const sourceFile = this.delegate.getSourceFile(fileName, languageVersion, onError);
-      return this.stripAndStoreExistingSourceMap(sourceFile);
+      return this.stripAndStoreExistingSourceMap(sourceFile!);
     }
 
     const sourceFile = this.runConfiguration.oldProgram.getSourceFile(fileName);
     switch (this.runConfiguration.pass) {
       case Pass.DECORATOR_DOWNLEVEL:
         return this.downlevelDecorators(
-            sourceFile, this.runConfiguration.oldProgram, fileName, languageVersion);
+            sourceFile!, this.runConfiguration.oldProgram, fileName, languageVersion);
       case Pass.CLOSURIZE:
         return this.closurize(
-            sourceFile, this.runConfiguration.oldProgram, fileName, languageVersion,
+            sourceFile!, this.runConfiguration.oldProgram, fileName, languageVersion,
             /* downlevelDecorators */ false);
       case Pass.DECORATOR_DOWNLEVEL_AND_CLOSURIZE:
         return this.closurize(
-            sourceFile, this.runConfiguration.oldProgram, fileName, languageVersion,
+            sourceFile!, this.runConfiguration.oldProgram, fileName, languageVersion,
             /* downlevelDecorators */ true);
       default:
         throw new Error('tried to use TsickleCompilerHost with unknown pass enum');
@@ -161,7 +161,7 @@ export class TsickleCompilerHost implements ts.CompilerHost {
 
   writeFile(
       fileName: string, content: string, writeByteOrderMark: boolean,
-      onError?: (message: string) => void, sourceFiles?: ts.SourceFile[]): void {
+      onError?: (message: string) => void, sourceFiles?: ReadonlyArray<ts.SourceFile>): void {
     if (path.extname(fileName) !== '.map') {
       if (!isDtsFileName(fileName) && this.tscOptions.inlineSourceMap) {
         content = this.combineInlineSourceMaps(fileName, content);
@@ -171,7 +171,7 @@ export class TsickleCompilerHost implements ts.CompilerHost {
       content = this.combineSourceMaps(fileName, content);
     }
 
-    this.delegate.writeFile(fileName, content, writeByteOrderMark, onError, sourceFiles);
+    this.delegate.writeFile(fileName, content, writeByteOrderMark, onError, sourceFiles! as ReadonlyArray<ts.SourceFile>);
   }
 
   getSourceMapKeyForPathAndName(outputFilePath: string, sourceFileName: string): string {
@@ -372,7 +372,7 @@ export class TsickleCompilerHost implements ts.CompilerHost {
     return this.delegate.getDirectories(path);
   }
 
-  readFile(fileName: string): string {
+  readFile(fileName: string): string | undefined {
     return this.delegate.readFile(fileName);
   }
 

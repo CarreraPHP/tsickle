@@ -283,6 +283,11 @@ export function visitNodeWithSynthesizedComments<T extends ts.Node>(
   return resetNodeTextRangeToPreventDuplicateComments(node);
 }
 
+function getEmitFlags(node: any) {
+  var emitNode = node.emitNode;
+  return emitNode && emitNode.flags;
+}
+
 /**
  * Reset the text range for some special nodes as otherwise TypeScript
  * would always emit the original comments for them.
@@ -291,7 +296,7 @@ export function visitNodeWithSynthesizedComments<T extends ts.Node>(
  * @param node
  */
 function resetNodeTextRangeToPreventDuplicateComments<T extends ts.Node>(node: T): T {
-  ts.setEmitFlags(node, (ts.getEmitFlags(node) || 0) | ts.EmitFlags.NoComments);
+  ts.setEmitFlags(node, (getEmitFlags(node) || 0) | ts.EmitFlags.NoComments);
   // See also addSyntheticCommentsAfterTsTransformer.
   // Note: Don't reset the textRange for ts.ExportDeclaration / ts.ImportDeclaration
   // until after the TypeScript transformer as we need the source location
@@ -307,7 +312,7 @@ function resetNodeTextRangeToPreventDuplicateComments<T extends ts.Node>(node: T
     // TODO(tbosch): Using pd.initializer! as the typescript typings before 2.4.0
     // are incorrect. Remove this once we upgrade to TypeScript 2.4.0.
     node = ts.updateProperty(
-               pd, pd.decorators, pd.modifiers, resetTextRange(pd.name) as ts.PropertyName, pd.type,
+               pd, pd.decorators, pd.modifiers, resetTextRange(pd.name) as ts.PropertyName, pd.questionToken, pd.type,
                pd.initializer!) as ts.Node as T;
   }
   if (!allowTextRange) {
@@ -378,6 +383,10 @@ function synthesizeTrailingComments(sourceFile: ts.SourceFile, node: ts.Node): n
   return -1;
 }
 
+function arrayOf<T>(value: T|undefined|null): T[] {
+  return value ? [value] : [];
+}
+
 /**
  * Convert leading/trailing detached comment ranges of statement arrays
  * (e.g. the statements of a ts.SourceFile or ts.Block) into
@@ -395,13 +404,32 @@ function visitNodeStatementsWithSynthesizedComments<T extends ts.Node>(
   const leading = synthesizeDetachedLeadingComments(sourceFile, node, statements);
   const trailing = synthesizeDetachedTrailingComments(sourceFile, node, statements);
   if (leading.commentStmt || trailing.commentStmt) {
-    statements = ts.setTextRange(ts.createNodeArray(statements), {pos: -1, end: -1});
-    if (leading.commentStmt) {
-      statements.unshift(leading.commentStmt);
-    }
-    if (trailing.commentStmt) {
-      statements.push(trailing.commentStmt);
-    }
+    const newStatements: ts.Statement[] =
+        [...arrayOf(leading.commentStmt), ...statements, ...arrayOf(trailing.commentStmt)];
+    statements = ts.setTextRange(ts.createNodeArray(newStatements), {pos: -1, end: -1});
+
+    /**
+     * The visitor creates a new node with the new statements. However, doing so
+     * reveals a TypeScript bug.
+     * To reproduce comment out the line below and compile:
+     *
+     * // ......
+     *
+     * abstract class A {
+     * }
+     * abstract class B extends A {
+     *   // ......
+     * }
+     *
+     * Note that newlines are significant. This would result in the following:
+     * runtime error "TypeError: Cannot read property 'members' of undefined".
+     *
+     * The line below is a workaround that ensures that updateSourceFileNode and
+     * updateBlock never create new Nodes.
+     * TODO(#634): file a bug with TS team.
+     */
+    (node as ts.Node as ts.SourceFile).statements = statements;
+
     const fileContext = assertFileContext(context, sourceFile);
     if (leading.lastCommentEnd !== -1) {
       fileContext.lastCommentEnd = leading.lastCommentEnd;

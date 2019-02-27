@@ -49,7 +49,7 @@ export function createSourceReplacingCompilerHost(
 
   function getSourceFile(
       fileName: string, languageVersion: ts.ScriptTarget,
-      onError?: (message: string) => void): ts.SourceFile {
+      onError?: (message: string) => void): ts.SourceFile|undefined {
     const path: string = ts.sys.resolvePath(fileName);
     const sourceText = substituteSource.get(path);
     if (sourceText !== undefined) {
@@ -67,19 +67,25 @@ export function createSourceReplacingCompilerHost(
  */
 export function createOutputRetainingCompilerHost(
     outputFiles: Map<string, string>, delegate: ts.CompilerHost): ts.CompilerHost {
-  return {
+  return <ts.CompilerHost>{
     getSourceFile: delegate.getSourceFile,
+    getSourceFileByPath: delegate.getSourceFileByPath,
     getCancellationToken: delegate.getCancellationToken,
     getDefaultLibFileName: delegate.getDefaultLibFileName,
+    getDefaultLibLocation: delegate.getDefaultLibLocation,
     writeFile,
     getCurrentDirectory: delegate.getCurrentDirectory,
+    getDirectories: delegate.getDirectories,
     getCanonicalFileName: delegate.getCanonicalFileName,
     useCaseSensitiveFileNames: delegate.useCaseSensitiveFileNames,
     getNewLine: delegate.getNewLine,
-    fileExists: delegate.fileExists,
-    readFile: delegate.readFile,
-    directoryExists: delegate.directoryExists,
-    getDirectories: delegate.getDirectories,
+    resolveModuleNames: delegate.resolveModuleNames,
+    resolveTypeReferenceDirectives: delegate.resolveTypeReferenceDirectives,
+    getEnvironmentVariable: delegate.getEnvironmentVariable,
+    createHash: delegate.createHash
+    // fileExists: delegate.fileExists,
+    // readFile: delegate.readFile,
+    // directoryExists: delegate.directoryExists,
   };
 
   function writeFile(

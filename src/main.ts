@@ -166,8 +166,11 @@ export function toClosureJS(
   // - error messages point at the original source text
   // - tsickle can use the result of typechecking for annotation
   const jsFiles = new Map<string, string>();
+
+  const compileHost = ts.createCompilerHost(options);
+
   const outputRetainingHost =
-      createOutputRetainingCompilerHost(jsFiles, ts.createCompilerHost(options));
+      createOutputRetainingCompilerHost(jsFiles, compileHost);
 
   const sourceReplacingHost =
       createSourceReplacingCompilerHost(closureJSOptions.files, outputRetainingHost);
@@ -176,7 +179,7 @@ export function toClosureJS(
       sourceReplacingHost, options, closureJSOptions.tsickleCompilerHostOptions,
       closureJSOptions.tsickleHost);
 
-  let program = ts.createProgram(fileNames, options, tch);
+  let program = ts.createProgram(fileNames, options, compileHost);
   {  // Scope for the "diagnostics" variable so we can use the name again later.
     const diagnostics = ts.getPreEmitDiagnostics(program);
     if (diagnostics.length > 0) {
@@ -189,12 +192,12 @@ export function toClosureJS(
   // place of the original source.
   if (closureJSOptions.tsicklePasses.indexOf(tsickle.Pass.DECORATOR_DOWNLEVEL) !== -1) {
     tch.reconfigureForRun(program, tsickle.Pass.DECORATOR_DOWNLEVEL);
-    program = ts.createProgram(fileNames, options, tch);
+    program = ts.createProgram(fileNames, options, compileHost);
   }
 
   if (closureJSOptions.tsicklePasses.indexOf(tsickle.Pass.CLOSURIZE) !== -1) {
     tch.reconfigureForRun(program, tsickle.Pass.CLOSURIZE);
-    program = ts.createProgram(fileNames, options, tch);
+    program = ts.createProgram(fileNames, options, compileHost);
   }
 
   const {diagnostics} = program.emit(undefined);

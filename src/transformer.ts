@@ -75,7 +75,7 @@ export function emitWithTsickle(
     program: ts.Program, host: TransformerHost, options: TransformerOptions,
     tsHost: ts.CompilerHost, tsOptions: ts.CompilerOptions, targetSourceFile?: ts.SourceFile,
     writeFile?: ts.WriteFileCallback, cancellationToken?: ts.CancellationToken,
-    emitOnlyDtsFiles?: boolean, customTransformers?: EmitTransformers): EmitResult {
+    emitOnlyDtsFiles?: boolean, customTransformers?: EmitTransformers | ts.CustomTransformers): EmitResult {
   let tsickleDiagnostics: ts.Diagnostic[] = [];
   const typeChecker = program.getTypeChecker();
   const beforeTsTransformers: Array<ts.TransformerFactory<ts.SourceFile>> = [];
@@ -83,7 +83,7 @@ export function emitWithTsickle(
   if (options.transformTypesToClosure) {
     // Note: tsickle.annotate can also lower decorators in the same run.
     beforeTsTransformers.push(createTransformerFromSourceMap((sourceFile, sourceMapper) => {
-      const tisckleOptions: tsickle.Options = {...options, filterTypesForExport: true};
+      const tisckleOptions: tsickle.Options = <tsickle.Options>{...options, filterTypesForExport: true};
       const {output, diagnostics} = tsickle.annotate(
           typeChecker, sourceFile, host, tisckleOptions, tsHost, tsOptions, sourceMapper,
           tsickle.AnnotatorFeatures.Transformer);
@@ -105,6 +105,7 @@ export function emitWithTsickle(
   // }));
   // add user supplied transformers
   const afterTsTransformers: Array<ts.TransformerFactory<ts.SourceFile>> = [];
+  customTransformers = <EmitTransformers>customTransformers;
   if (customTransformers) {
     if (customTransformers.beforeTsickle) {
       beforeTsTransformers.unshift(...customTransformers.beforeTsickle);
@@ -117,7 +118,7 @@ export function emitWithTsickle(
       afterTsTransformers.push(...customTransformers.afterTs);
     }
   }
-  customTransformers = createCustomTransformers({
+  customTransformers = <ts.CustomTransformers>createCustomTransformers({
     before: beforeTsTransformers.map(tf => skipTransformForSourceFileIfNeeded(host, tf)),
     after: afterTsTransformers.map(tf => skipTransformForSourceFileIfNeeded(host, tf))
   });
@@ -126,7 +127,7 @@ export function emitWithTsickle(
   const modulesManifest = new ModulesManifest();
   const writeFileImpl =
       (fileName: string, content: string, writeByteOrderMark: boolean,
-       onError?: (message: string) => void, sourceFiles?: ts.SourceFile[]) => {
+       onError?: (message: string) => void, sourceFiles?: ReadonlyArray<ts.SourceFile>) => {
         if (path.extname(fileName) !== '.map') {
           if (tsOptions.inlineSourceMap) {
             content = combineInlineSourceMaps(program, fileName, content);
@@ -166,7 +167,7 @@ export function emitWithTsickle(
   // warns and then fixes up the code to be Closure-compatible anyway.
   tsickleDiagnostics = tsickleDiagnostics.filter(
       d => d.category === ts.DiagnosticCategory.Error ||
-          !host.shouldIgnoreWarningsForPath(d.file.fileName));
+          !host.shouldIgnoreWarningsForPath(d.file!.fileName));
 
   return {
     modulesManifest,

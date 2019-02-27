@@ -595,7 +595,7 @@ class Annotator extends ClosureRewriter {
       case ts.SyntaxKind.InterfaceDeclaration:
       case ts.SyntaxKind.ClassDeclaration:
       case ts.SyntaxKind.ModuleDeclaration:
-        const decl = node as ts.Declaration;
+        const decl = node as ts.NamedDeclaration;
         if (!decl.name || decl.name.kind !== ts.SyntaxKind.Identifier) {
           break;
         }
@@ -688,7 +688,7 @@ class Annotator extends ClosureRewriter {
           this.emit(` {${exportSymbolsToEmit.map(e => unescapeName(e.name)).join(',')}}`);
         } else {
           if (exportDecl.exportClause) {
-            exportedSymbols = this.getNamedSymbols(exportDecl.exportClause.elements);
+            exportedSymbols = this.getNamedSymbols(exportDecl.exportClause.elements.slice());
             this.visit(exportDecl.exportClause);
           }
         }
@@ -886,7 +886,8 @@ class Annotator extends ClosureRewriter {
         // If it has a symbol, it's actually a regular declared property.
         if (!quotedPropSym) return false;
         const declarationHasQuotes =
-            !quotedPropSym.declarations || quotedPropSym.declarations.some(decl => {
+            !quotedPropSym.declarations || quotedPropSym.declarations.some(d => {
+              const decl = <ts.NamedDeclaration>d;
               if (!decl.name) return false;
               return decl.name.kind === ts.SyntaxKind.StringLiteral;
             });
@@ -1050,12 +1051,17 @@ class Annotator extends ClosureRewriter {
     const reexports = new Set<ts.Symbol>();
     for (const sym of exports) {
       const name = unescapeName(sym.name);
-      if (moduleExports.has(name)) {
-        // This name is shadowed by a local definition, such as:
-        // - export var foo ...
-        // - export {foo} from ...
-        // - export {bar as foo} from ...
-        continue;
+      if (moduleExports instanceof Map) {
+        if (moduleExports.has(name)) {
+          // This name is shadowed by a local definition, such as:
+          // - export var foo ...
+          // - export {foo} from ...
+          // - export {bar as foo} from ...
+          continue;
+        }
+      } else {
+        // TODO(#634): check if this is a safe cast.
+        if (moduleExports.has(name as ts.__String)) continue;
       }
       if (this.generatedExports.has(name)) {
         // Already exported via an earlier expansion of an "export * from ...".
@@ -1198,7 +1204,8 @@ class Annotator extends ClosureRewriter {
     }
   }
 
-  private getNamedSymbols(specifiers: Array<ts.ImportSpecifier|ts.ExportSpecifier>): NamedSymbol[] {
+  private getNamedSymbols(specifiers: ReadonlyArray<ts.ImportSpecifier|ts.ExportSpecifier>):
+      NamedSymbol[] {
     return specifiers.map(e => {
       return {
         // e.name might be renaming symbol as in `export {Foo as Bar}`, where e.name would be 'Bar'
@@ -1392,7 +1399,7 @@ class Annotator extends ClosureRewriter {
     this.emit(`}\n`);
   }
 
-  private propertyName(prop: ts.Declaration): string|null {
+  private propertyName(prop: ts.NamedDeclaration): string|null {
     if (!prop.name) return null;
 
     switch (prop.name.kind) {
@@ -1492,13 +1499,12 @@ class Annotator extends ClosureRewriter {
 
       if (member.initializer) {
         const enumConstValue = this.typeChecker.getConstantValue(member);
-        if (enumConstValue !== undefined) {
-          this.emit(enumConstValue.toString());
-          // TODO(martinprobst): In TypeScript 2.4, check enumConstValue is not a string.
+        if (typeof enumConstValue === 'number') {
           enumIndex = enumConstValue + 1;
+          this.emit(enumConstValue.toString());
         } else {
-          // Non-constant enum value.  Save the initializer expression for
-          // emitting as-is.
+          // Non-numeric enum value (string or an expression).
+          // Emit this initializer expression as-is.
           // Note: if the member's initializer expression refers to another
           // value within the enum (e.g. something like
           //   enum Foo {
@@ -1506,13 +1512,13 @@ class Annotator extends ClosureRewriter {
           //     Field2 = Field1 + something(),
           //   }
           // Then when we emit the initializer we produce invalid code because
-          // on the Closure side it has to be written "Foo.Field1 + something()".
+          // on the Closure side the reference to Field1 has to be namespaced,
+          // e.g. written "Foo.Field1 + something()".
           // Hopefully this doesn't come up often -- if the enum instead has
           // something like
           //     Field2 = Field1 + 3,
           // then it's still a constant expression and we inline the constant
           // value in the above branch of this "if" statement.
-          // members.set(memberName, member.initializer);
           this.visit(member.initializer);
         }
       } else {
